@@ -8,18 +8,7 @@ pipeline {
     }
     
     stages {
-        stage('Cleanup Old Resources') {
-            steps {
-                script {
-                    echo 'Cleaning up old containers and images...'
-                    sh '''
-                        docker rm -f ${CONTAINER_NAME} || true
-                        docker rmi ${DOCKER_IMAGE}:jenkins-${BUILD_NUMBER} || true
-                    '''
-                }
-            }
-        }
-        
+               
         stage('Checkout Code') {
             steps {
                 echo 'Checking out code from GitHub...'
