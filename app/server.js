@@ -8,6 +8,11 @@ app.get('/health', (req, res) => {
     res.status(200).json({ status: 'healthy', timestamp: new Date() });
 });
 
+// ping check endpoint
+app.get('/ping', (req, res) => {
+    res.status(200).json({ status: 'pong', timestamp: new Date() });
+});
+
 // Main endpoint - ADDED ConfigMap data
 app.get('/', (req, res) => {
     res.json({

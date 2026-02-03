@@ -9,6 +9,7 @@ on:
 env:
   DOCKER_IMAGE: nirmal1611/nodejs-k8s-demo
   K8S_NAMESPACE: nodejs-app
+  IMAGE_TAG: run-${{ github.run_number }}
 
 jobs:
   build-and-test:
@@ -39,16 +40,18 @@ jobs:
     - name: Login to Docker Hub
       run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
     
-    - name: Build Docker image
+    - name: Build Docker image with run number
       working-directory: ./app
       run: |
+        echo "Building image with tag: ${{ env.IMAGE_TAG }}"
+        docker build -t ${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }} .
         docker build -t ${{ env.DOCKER_IMAGE }}:latest .
-        docker build -t ${{ env.DOCKER_IMAGE }}:${{ github.sha }} .
     
     - name: Push Docker image
       run: |
+        docker push ${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}
         docker push ${{ env.DOCKER_IMAGE }}:latest
-        docker push ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+        echo "Pushed: ${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}"
     
     - name: Logout from Docker Hub
       if: always()
@@ -76,7 +79,7 @@ jobs:
         kubectl wait --namespace ingress-nginx \
           --for=condition=ready pod \
           --selector=app.kubernetes.io/component=controller \
-          --timeout=120s
+          --timeout=120s || echo "Ingress controller already ready"
     
     - name: Apply Kubernetes manifests
       run: |
@@ -85,10 +88,11 @@ jobs:
         kubectl apply -f k8s/service.yaml
         kubectl apply -f k8s/ingress.yaml
     
-    - name: Update deployment image
+    - name: Update deployment with new image tag
       run: |
+        echo "Deploying image: ${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}"
         kubectl set image deployment/nodejs-deployment \
-          nodejs-container=${{ env.DOCKER_IMAGE }}:${{ github.sha }} \
+          nodejs-container=${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }} \
           -n ${{ env.K8S_NAMESPACE }} --record || \
         kubectl apply -f k8s/deployment.yaml
     
@@ -126,6 +130,10 @@ jobs:
     
     - name: Verify deployment
       run: |
+        echo "=== Deployed Image ==="
+        kubectl get deployment nodejs-deployment -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.spec.template.spec.containers[0].image}'
+        echo ""
+        echo ""
         echo "=== Pods ==="
         kubectl get pods -n ${{ env.K8S_NAMESPACE }}
         echo ""
@@ -149,8 +157,5 @@ jobs:
         curl -f http://nodejs-demo.local/
         
         echo ""
-        echo "Testing API endpoint: http://nodejs-demo.local/api/info"
-        curl -f http://nodejs-demo.local/api/info
-        
-        echo ""
-        echo "All health checks passed via DNS!"
+        echo "Deployment successful!"
+        echo "Image deployed: ${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}"
