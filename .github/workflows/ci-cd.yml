@@ -67,21 +67,62 @@ jobs:
     - name: Check Minikube status
       run: minikube status
     
-    - name: Apply namespace and configmap
+    - name: Enable Ingress addon
+      run: minikube addons enable ingress
+    
+    - name: Wait for ingress controller
+      run: |
+        echo "Waiting for ingress-nginx controller..."
+        kubectl wait --namespace ingress-nginx \
+          --for=condition=ready pod \
+          --selector=app.kubernetes.io/component=controller \
+          --timeout=120s
+    
+    - name: Apply Kubernetes manifests
       run: |
         kubectl apply -f k8s/namespace.yaml
         kubectl apply -f k8s/configmap.yaml
         kubectl apply -f k8s/service.yaml
+        kubectl apply -f k8s/ingress.yaml
     
-    - name: Update deployment image and apply
+    - name: Update deployment image
       run: |
         kubectl set image deployment/nodejs-deployment \
           nodejs-container=${{ env.DOCKER_IMAGE }}:${{ github.sha }} \
           -n ${{ env.K8S_NAMESPACE }} --record || \
         kubectl apply -f k8s/deployment.yaml
     
-    - name: Wait for rollout to complete
+    - name: Wait for rollout
       run: kubectl rollout status deployment/nodejs-deployment -n ${{ env.K8S_NAMESPACE }} --timeout=3m
+    
+    - name: Wait for ingress to get address
+      run: |
+        echo "Waiting for ingress to get address..."
+        timeout=60
+        while [ $timeout -gt 0 ]; do
+          ADDRESS=$(kubectl get ingress nodejs-ingress -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          if [ -n "$ADDRESS" ]; then
+            echo "Ingress address: $ADDRESS"
+            break
+          fi
+          echo "Waiting... ($timeout seconds left)"
+          sleep 5
+          timeout=$((timeout - 5))
+        done
+    
+    - name: Update /etc/hosts
+      run: |
+        MINIKUBE_IP=$(minikube ip)
+        echo "Minikube IP: $MINIKUBE_IP"
+        
+        # Remove old entry if exists
+        sudo sed -i '/nodejs-demo.local/d' /etc/hosts
+        
+        # Add new entry
+        echo "$MINIKUBE_IP nodejs-demo.local" | sudo tee -a /etc/hosts
+        
+        # Verify
+        cat /etc/hosts | grep nodejs-demo
     
     - name: Verify deployment
       run: |
@@ -91,16 +132,25 @@ jobs:
         echo "=== Services ==="
         kubectl get svc -n ${{ env.K8S_NAMESPACE }}
         echo ""
-        echo "=== Current Image ==="
-        kubectl get deployment nodejs-deployment -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.spec.template.spec.containers[0].image}'
+        echo "=== Ingress ==="
+        kubectl get ingress -n ${{ env.K8S_NAMESPACE }}
         echo ""
     
-    - name: Health check
+    - name: Health check via DNS
       run: |
-        sleep 10
-        MINIKUBE_IP=$(minikube ip)
-        NODEPORT=$(kubectl get svc nodejs-service -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.spec.ports[0].nodePort}')
-        echo "Testing: http://$MINIKUBE_IP:$NODEPORT/health"
-        curl -f http://$MINIKUBE_IP:$NODEPORT/health
+        echo "Waiting for ingress to be fully ready..."
+        sleep 15
+        
+        echo "Testing via domain: http://nodejs-demo.local/health"
+        curl -f http://nodejs-demo.local/health
+        
         echo ""
-        echo "✅ Deployment successful!"
+        echo "Testing main endpoint: http://nodejs-demo.local/"
+        curl -f http://nodejs-demo.local/
+        
+        echo ""
+        echo "Testing API endpoint: http://nodejs-demo.local/api/info"
+        curl -f http://nodejs-demo.local/api/info
+        
+        echo ""
+        echo "All health checks passed via DNS!"
