@@ -1,0 +1,106 @@
+name: Local CI/CD Pipeline
+
+on:
+  push:
+    branches: [ github-action ]
+  pull_request:
+    branches: [ github-action ]
+
+env:
+  DOCKER_IMAGE: nirmal1611/nodejs-k8s-demo
+  K8S_NAMESPACE: nodejs-app
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: self-hosted
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Install dependencies
+      working-directory: ./app
+      run: npm ci
+    
+    - name: Run tests
+      working-directory: ./app
+      run: npm test
+
+  build-and-push-docker:
+    name: Build and Push Docker Image
+    runs-on: self-hosted
+    needs: build-and-test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Login to Docker Hub
+      run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+    
+    - name: Build Docker image
+      working-directory: ./app
+      run: |
+        docker build -t ${{ env.DOCKER_IMAGE }}:latest .
+        docker build -t ${{ env.DOCKER_IMAGE }}:${{ github.sha }} .
+    
+    - name: Push Docker image
+      run: |
+        docker push ${{ env.DOCKER_IMAGE }}:latest
+        docker push ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+    
+    - name: Logout from Docker Hub
+      if: always()
+      run: docker logout
+
+  deploy-to-minikube:
+    name: Deploy to Local Minikube
+    runs-on: self-hosted
+    needs: build-and-push-docker
+    if: github.ref == 'refs/heads/github-action'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Check Minikube status
+      run: minikube status
+    
+    - name: Apply namespace and configmap
+      run: |
+        kubectl apply -f k8s/namespace.yaml
+        kubectl apply -f k8s/configmap.yaml
+        kubectl apply -f k8s/service.yaml
+    
+    - name: Update deployment image and apply
+      run: |
+        kubectl set image deployment/nodejs-deployment \
+          nodejs-container=${{ env.DOCKER_IMAGE }}:${{ github.sha }} \
+          -n ${{ env.K8S_NAMESPACE }} --record || \
+        kubectl apply -f k8s/deployment.yaml
+    
+    - name: Wait for rollout to complete
+      run: kubectl rollout status deployment/nodejs-deployment -n ${{ env.K8S_NAMESPACE }} --timeout=3m
+    
+    - name: Verify deployment
+      run: |
+        echo "=== Pods ==="
+        kubectl get pods -n ${{ env.K8S_NAMESPACE }}
+        echo ""
+        echo "=== Services ==="
+        kubectl get svc -n ${{ env.K8S_NAMESPACE }}
+        echo ""
+        echo "=== Current Image ==="
+        kubectl get deployment nodejs-deployment -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.spec.template.spec.containers[0].image}'
+        echo ""
+    
+    - name: Health check
+      run: |
+        sleep 10
+        MINIKUBE_IP=$(minikube ip)
+        NODEPORT=$(kubectl get svc nodejs-service -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.spec.ports[0].nodePort}')
+        echo "Testing: http://$MINIKUBE_IP:$NODEPORT/health"
+        curl -f http://$MINIKUBE_IP:$NODEPORT/health
+        echo ""
+        echo "✅ Deployment successful!"
