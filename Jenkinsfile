@@ -103,67 +103,17 @@ pipeline {
                     echo 'Container is running successfully'
                 }
             }
-        }
-        
-        stage('Verify Container') {
-            steps {
-                script {
-                    echo 'Verifying container is running...'
-                    sh """
-                        docker logs ${CONTAINER_NAME}
-                        echo ""
-                        echo "Container started successfully"
-                    """
-                }
-            }
-        }
     }
     
     post {
         success {
             echo 'Pipeline completed successfully'
-            script {
-                def buildDuration = currentBuild.durationString.replace(' and counting', '')
-                slackSend (
-                    color: '#00FF00',
-                    message: """
-*BUILD SUCCESS* :white_check_mark:
-
-*Project:* ${JOB_NAME}
-*Build:* #${BUILD_NUMBER}
-*Duration:* ${buildDuration}
-*Docker Image:* ${DOCKER_IMAGE}:jenkins-${BUILD_NUMBER}
-*Container:* ${CONTAINER_NAME} on port ${CONTAINER_PORT}
-
-*Test Application:* http://localhost:${CONTAINER_PORT}
-
-<${BUILD_URL}|View Build Details> | <${BUILD_URL}console|Console Output>
-                    """.stripIndent(),
-                    channel: '#jenkins'
-                )
-            }
+            slackSend message: "Build ${BUILD_NUMBER} - SUCCESS"
         }
         
         failure {
             echo 'Pipeline failed'
-            script {
-                def buildDuration = currentBuild.durationString.replace(' and counting', '')
-                slackSend (
-                    color: '#FF0000',
-                    message: """
-*BUILD FAILED* :x:
-
-*Project:* ${JOB_NAME}
-*Build:* #${BUILD_NUMBER}
-*Duration:* ${buildDuration}
-
-*Action Required:* Check console output for details
-
-<${BUILD_URL}console|View Console Output> | <${BUILD_URL}|Build Details>
-                    """.stripIndent(),
-                    channel: '#jenkins'
-                )
-            }
+            slackSend message: "Build ${BUILD_NUMBER} - FAILURE"
         }
         
         always {
