@@ -3,12 +3,24 @@ pipeline {
     
     environment {
         DOCKER_IMAGE = 'nirmal1611/nodejs-k8s-demo'
-        CONTAINER_NAME = 'nodejs-app-jenkins'
+        NEW_CONTAINER = "nodejs-app-new"
+        OLD_CONTAINER = "nodejs-app-current"
         CONTAINER_PORT = '3000'
+        DOCKER_NETWORK = 'app-network'
     }
     
     stages {
-               
+        stage('Setup Network') {
+            steps {
+                script {
+                    echo 'Creating Docker network if not exists...'
+                    sh """
+                        docker network create ${DOCKER_NETWORK} || true
+                    """
+                }
+            }
+        }
+        
         stage('Checkout Code') {
             steps {
                 echo 'Checking out code from GitHub...'
@@ -44,11 +56,10 @@ pipeline {
                     echo 'Building Docker image...'
                     dir('app') {
                         sh """
-                            docker build -t ${DOCKER_IMAGE}:jenkins-${BUILD_NUMBER} .
-                            docker tag ${DOCKER_IMAGE}:jenkins-${BUILD_NUMBER} ${DOCKER_IMAGE}:jenkins-latest
+                            docker build -t ${DOCKER_IMAGE}:${BUILD_NUMBER} .
+                            docker tag ${DOCKER_IMAGE}:${BUILD_NUMBER} ${DOCKER_IMAGE}:latest
                         """
                     }
-                    echo "Built image: ${DOCKER_IMAGE}:jenkins-${BUILD_NUMBER}"
                 }
             }
         }
@@ -64,51 +75,114 @@ pipeline {
                     )]) {
                         sh """
                             echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
-                            docker push ${DOCKER_IMAGE}:jenkins-${BUILD_NUMBER}
-                            docker push ${DOCKER_IMAGE}:jenkins-latest
+                            docker push ${DOCKER_IMAGE}:${BUILD_NUMBER}
+                            docker push ${DOCKER_IMAGE}:latest
                             docker logout
                         """
                     }
-                    echo "Successfully pushed to Docker Hub"
                 }
             }
         }
         
-        stage('Run Container') {
+        stage('Deploy New Container') {
             steps {
                 script {
-                    echo 'Running Docker container...'
+                    echo 'Starting new container...'
                     sh """
                         docker run -d \
-                            --name ${CONTAINER_NAME} \
-                            -p ${CONTAINER_PORT}:3000 \
-                            ${DOCKER_IMAGE}:jenkins-${BUILD_NUMBER}
+                            --name ${NEW_CONTAINER} \
+                            --network ${DOCKER_NETWORK} \
+                            -p 3001:3000 \
+                            ${DOCKER_IMAGE}:${BUILD_NUMBER}
                     """
                     
-                    echo 'Waiting for container to start...'
+                    echo 'Waiting for new container to start...'
                     sleep 10
+                }
+            }
+        }
+        
+        stage('Health Check') {
+            steps {
+                script {
+                    echo 'Running health check on new container...'
+                    // Use container name instead of localhost
+                    def healthCheck = sh(
+                        script: """
+                            docker run --rm --network ${DOCKER_NETWORK} \
+                                curlimages/curl:latest \
+                                curl -f http://${NEW_CONTAINER}:3000/health || \
+                            docker run --rm --network ${DOCKER_NETWORK} \
+                                curlimages/curl:latest \
+                                curl -f http://${NEW_CONTAINER}:3000/
+                        """,
+                        returnStatus: true
+                    )
                     
-                    sh 'docker ps | grep ${CONTAINER_NAME}'
-                    echo 'Container is running successfully'
+                    if (healthCheck != 0) {
+                        error("Health check failed for new container")
+                    }
+                    
+                    echo 'Health check passed!'
+                }
+            }
+        }
+        
+        stage('Switch Traffic') {
+            steps {
+                script {
+                    echo 'Switching traffic to new container...'
+                    
+                    // Stop old container
+                    sh """
+                        docker stop ${OLD_CONTAINER} || true
+                        docker rm ${OLD_CONTAINER} || true
+                    """
+                    
+                    // Stop new container
+                    sh "docker stop ${NEW_CONTAINER}"
+                    sh "docker rm ${NEW_CONTAINER}"
+                    
+                    // Start container with production name and port
+                    sh """
+                        docker run -d \
+                            --name ${OLD_CONTAINER} \
+                            --network ${DOCKER_NETWORK} \
+                            -p ${CONTAINER_PORT}:3000 \
+                            ${DOCKER_IMAGE}:${BUILD_NUMBER}
+                    """
+                    
+                    sleep 5
+                    
+                    echo 'Deployment completed successfully!'
+                }
+            }
+        }
+        
+        stage('Cleanup') {
+            steps {
+                script {
+                    echo 'Cleaning up old images...'
+                    sh """
+                        docker image prune -f --filter "until=24h" || true
+                    """
                 }
             }
         }
     }
     
-    // post {
-    //     success {
-    //         echo 'Pipeline completed successfully'
-    //         slackSend message: "Build ${BUILD_NUMBER} - SUCCESS"
-    //     }
+    post {
+        failure {
+            script {
+                echo 'Deployment failed, cleaning up...'
+                sh """
+                    docker rm -f ${NEW_CONTAINER} || true
+                """
+            }
+        }
         
-    //     failure {
-    //         echo 'Pipeline failed'
-    //         slackSend message: "Build ${BUILD_NUMBER} - FAILURE"
-    //     }
-        
-    //     always {
-    //         echo 'Cleaning up workspace...'
-    //         cleanWs()
-    //     }
-    // }
+        success {
+            echo "Deployment successful! App running at http://<your-host-ip>:${CONTAINER_PORT}"
+        }
+    }
 }
