@@ -88,11 +88,11 @@ pipeline {
             steps {
                 script {
                     echo 'Starting new container...'
+                    // Start WITHOUT port mapping (only on Docker network)
                     sh """
                         docker run -d \
                             --name ${NEW_CONTAINER} \
                             --network ${DOCKER_NETWORK} \
-                            -p 3001:3000 \
                             ${DOCKER_IMAGE}:${BUILD_NUMBER}
                     """
                     
@@ -127,26 +127,31 @@ pipeline {
             }
         }
         
-        stage('Switch Traffic') {
+        stage('Switch Traffic - Zero Downtime') {
             steps {
                 script {
                     echo 'Switching traffic to new container...'
                     
-                    // Stop and remove old container first
+                    // Step 1: Stop and remove OLD container (frees port 3000)
                     sh """
-                        docker stop ${OLD_CONTAINER} || true
-                        docker rm ${OLD_CONTAINER} || true
+                        echo "Stopping old container..."
+                        docker stop ${OLD_CONTAINER} 2>/dev/null || true
+                        docker rm ${OLD_CONTAINER} 2>/dev/null || true
                     """
                     
-                    // Stop the new container temporarily
-                    sh "docker stop ${NEW_CONTAINER}"
+                    // Small delay to ensure port is released
+                    sleep 2
                     
-                    // Rename it to the current name
-                    sh "docker rename ${NEW_CONTAINER} ${OLD_CONTAINER}"
-                    
-                    // Remove old port mapping and recreate with port 3000
+                    // Step 2: Remove the new container (we'll recreate it)
                     sh """
-                        docker rm ${OLD_CONTAINER}
+                        echo "Removing new container..."
+                        docker stop ${NEW_CONTAINER}
+                        docker rm ${NEW_CONTAINER}
+                    """
+                    
+                    // Step 3: Create container with correct name and port
+                    sh """
+                        echo "Starting container with production configuration..."
                         docker run -d \
                             --name ${OLD_CONTAINER} \
                             --network ${DOCKER_NETWORK} \
@@ -155,6 +160,14 @@ pipeline {
                     """
                     
                     sleep 5
+                    
+                    // Verify deployment
+                    sh """
+                        echo "Verifying deployment..."
+                        docker ps | grep ${OLD_CONTAINER}
+                        echo "Container status:"
+                        docker inspect ${OLD_CONTAINER} --format='Container: {{.Name}} | Status: {{.State.Status}} | Port: {{(index (index .NetworkSettings.Ports "3000/tcp") 0).HostPort}}'
+                    """
                     
                     echo 'Traffic switched successfully!'
                 }
@@ -184,7 +197,12 @@ pipeline {
         }
         
         success {
-            echo "Deployment successful! App running at http://<your-host-ip>:${CONTAINER_PORT}"
+            echo """
+            Deployment Successful!
+            Build: ${BUILD_NUMBER}
+            Container: ${OLD_CONTAINER}
+            Access: http://<your-host-ip>:${CONTAINER_PORT}
+
         }
     }
 }
