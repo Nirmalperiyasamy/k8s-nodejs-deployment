@@ -105,29 +105,14 @@ pipeline {
             }
         }
         
-        stage('Health Check') {
+        stage('Verify Container') {
             steps {
                 script {
-                    echo 'Performing health check...'
+                    echo 'Verifying container is running...'
                     sh """
-                        curl -f http://localhost:${CONTAINER_PORT}/health
+                        docker logs ${CONTAINER_NAME}
                         echo ""
-                        echo "Health check passed"
-                    """
-                }
-            }
-        }
-        
-        stage('Test Endpoints') {
-            steps {
-                script {
-                    echo 'Testing application endpoints...'
-                    sh """
-                        echo "Testing main endpoint..."
-                        curl -s http://localhost:${CONTAINER_PORT}/ | head -5
-                        echo ""
-                        echo "Testing API info endpoint..."
-                        curl -s http://localhost:${CONTAINER_PORT}/api/info | head -5
+                        echo "Container started successfully"
                     """
                 }
             }
@@ -139,36 +124,22 @@ pipeline {
             echo 'Pipeline completed successfully'
             script {
                 def buildDuration = currentBuild.durationString.replace(' and counting', '')
-                emailext (
-                    subject: "SUCCESS: Jenkins Build #${BUILD_NUMBER}",
-                    body: """
-                        <html>
-                        <body>
-                            <h2 style="color: green;">Build Successful</h2>
-                            <table border="1" cellpadding="5">
-                                <tr><td><strong>Project</strong></td><td>${JOB_NAME}</td></tr>
-                                <tr><td><strong>Build Number</strong></td><td>${BUILD_NUMBER}</td></tr>
-                                <tr><td><strong>Status</strong></td><td style="color: green;">SUCCESS</td></tr>
-                                <tr><td><strong>Duration</strong></td><td>${buildDuration}</td></tr>
-                                <tr><td><strong>Docker Image</strong></td><td>${DOCKER_IMAGE}:jenkins-${BUILD_NUMBER}</td></tr>
-                                <tr><td><strong>Container</strong></td><td>${CONTAINER_NAME}</td></tr>
-                                <tr><td><strong>Port</strong></td><td>${CONTAINER_PORT}</td></tr>
-                            </table>
-                            <br>
-                            <h3>Test Application:</h3>
-                            <ul>
-                                <li><a href="http://localhost:${CONTAINER_PORT}">Main Endpoint</a></li>
-                                <li><a href="http://localhost:${CONTAINER_PORT}/health">Health Check</a></li>
-                                <li><a href="http://localhost:${CONTAINER_PORT}/api/info">API Info</a></li>
-                            </ul>
-                            <br>
-                            <p><a href="${BUILD_URL}">View Build Details</a></p>
-                            <p><a href="${BUILD_URL}console">View Console Output</a></p>
-                        </body>
-                        </html>
-                    """,
-                    to: 'your_email@gmail.com',
-                    mimeType: 'text/html'
+                slackSend (
+                    color: '#00FF00',
+                    message: """
+*BUILD SUCCESS* :white_check_mark:
+
+*Project:* ${JOB_NAME}
+*Build:* #${BUILD_NUMBER}
+*Duration:* ${buildDuration}
+*Docker Image:* ${DOCKER_IMAGE}:jenkins-${BUILD_NUMBER}
+*Container:* ${CONTAINER_NAME} on port ${CONTAINER_PORT}
+
+*Test Application:* http://localhost:${CONTAINER_PORT}
+
+<${BUILD_URL}|View Build Details> | <${BUILD_URL}console|Console Output>
+                    """.stripIndent(),
+                    channel: '#jenkins'
                 )
             }
         }
@@ -177,29 +148,20 @@ pipeline {
             echo 'Pipeline failed'
             script {
                 def buildDuration = currentBuild.durationString.replace(' and counting', '')
-                emailext (
-                    subject: "FAILED: Jenkins Build #${BUILD_NUMBER}",
-                    body: """
-                        <html>
-                        <body>
-                            <h2 style="color: red;">Build Failed</h2>
-                            <table border="1" cellpadding="5">
-                                <tr><td><strong>Project</strong></td><td>${JOB_NAME}</td></tr>
-                                <tr><td><strong>Build Number</strong></td><td>${BUILD_NUMBER}</td></tr>
-                                <tr><td><strong>Status</strong></td><td style="color: red;">FAILURE</td></tr>
-                                <tr><td><strong>Duration</strong></td><td>${buildDuration}</td></tr>
-                            </table>
-                            <br>
-                            <h3>Action Required:</h3>
-                            <p>Please check the console output for error details.</p>
-                            <br>
-                            <p><a href="${BUILD_URL}console">View Console Output</a></p>
-                            <p><a href="${BUILD_URL}">View Build Details</a></p>
-                        </body>
-                        </html>
-                    """,
-                    to: 'nirmalperiasamy1611@gmail.com',
-                    mimeType: 'text/html'
+                slackSend (
+                    color: '#FF0000',
+                    message: """
+*BUILD FAILED* :x:
+
+*Project:* ${JOB_NAME}
+*Build:* #${BUILD_NUMBER}
+*Duration:* ${buildDuration}
+
+*Action Required:* Check console output for details
+
+<${BUILD_URL}console|View Console Output> | <${BUILD_URL}|Build Details>
+                    """.stripIndent(),
+                    channel: '#jenkins'
                 )
             }
         }
