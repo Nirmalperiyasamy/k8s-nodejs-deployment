@@ -106,7 +106,6 @@ pipeline {
             steps {
                 script {
                     echo 'Running health check on new container...'
-                    // Use container name instead of localhost
                     def healthCheck = sh(
                         script: """
                             docker run --rm --network ${DOCKER_NETWORK} \
@@ -133,18 +132,21 @@ pipeline {
                 script {
                     echo 'Switching traffic to new container...'
                     
-                    // Stop old container
+                    // Stop and remove old container first
                     sh """
                         docker stop ${OLD_CONTAINER} || true
                         docker rm ${OLD_CONTAINER} || true
                     """
                     
-                    // Stop new container
+                    // Stop the new container temporarily
                     sh "docker stop ${NEW_CONTAINER}"
-                    sh "docker rm ${NEW_CONTAINER}"
                     
-                    // Start container with production name and port
+                    // Rename it to the current name
+                    sh "docker rename ${NEW_CONTAINER} ${OLD_CONTAINER}"
+                    
+                    // Remove old port mapping and recreate with port 3000
                     sh """
+                        docker rm ${OLD_CONTAINER}
                         docker run -d \
                             --name ${OLD_CONTAINER} \
                             --network ${DOCKER_NETWORK} \
@@ -154,7 +156,7 @@ pipeline {
                     
                     sleep 5
                     
-                    echo 'Deployment completed successfully!'
+                    echo 'Traffic switched successfully!'
                 }
             }
         }
