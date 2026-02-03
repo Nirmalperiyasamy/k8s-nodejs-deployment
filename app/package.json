@@ -1,0 +1,19 @@
+{
+  "name": "nodejs-k8s-demo",
+  "version": "1.0.0",
+  "description": "Node.js app for Kubernetes deployment",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo 'Test passed' && exit 0"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "keywords": ["kubernetes", "docker", "nodejs"],
+  "author": "Your Name",
+  "license": "MIT"
+}

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nodejs-service
+  namespace: nodejs-app
+  labels:
+    app: nodejs-demo
+spec:
+  type: ClusterIP
+  selector:
+    app: nodejs-demo
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 3000
