@@ -185,7 +185,7 @@ stage('Switch Traffic') {
         }
         
         success {
-            echo "Deployment successful! App running at http://<your-host-ip>:${CONTAINER_PORT}"
+            echo "Deployment successful! App running at http://localhost:${CONTAINER_PORT}"
         }
     }
 }

@@ -5,7 +5,7 @@ const PORT = process.env.PORT || 3000;
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-    res.status(200).json({ status: 'super healthy', timestamp: new Date() });
+    res.status(200).json({ status: 'super healthy 100', timestamp: new Date() });
 });
 
 // ping check endpoint
