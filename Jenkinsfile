@@ -202,7 +202,7 @@ pipeline {
             Build: ${BUILD_NUMBER}
             Container: ${OLD_CONTAINER}
             Access: http://<your-host-ip>:${CONTAINER_PORT}
-
+            """
         }
     }
 }
