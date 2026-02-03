@@ -103,6 +103,7 @@ pipeline {
                     echo 'Container is running successfully'
                 }
             }
+        }
     }
     
     post {
