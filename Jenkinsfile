@@ -106,20 +106,20 @@ pipeline {
         }
     }
     
-    post {
-        success {
-            echo 'Pipeline completed successfully'
-            slackSend message: "Build ${BUILD_NUMBER} - SUCCESS"
-        }
+    // post {
+    //     success {
+    //         echo 'Pipeline completed successfully'
+    //         slackSend message: "Build ${BUILD_NUMBER} - SUCCESS"
+    //     }
         
-        failure {
-            echo 'Pipeline failed'
-            slackSend message: "Build ${BUILD_NUMBER} - FAILURE"
-        }
+    //     failure {
+    //         echo 'Pipeline failed'
+    //         slackSend message: "Build ${BUILD_NUMBER} - FAILURE"
+    //     }
         
-        always {
-            echo 'Cleaning up workspace...'
-            cleanWs()
-        }
-    }
+    //     always {
+    //         echo 'Cleaning up workspace...'
+    //         cleanWs()
+    //     }
+    // }
 }
